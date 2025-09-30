@@ -32,24 +32,25 @@ def _verify_data(data: Union[list, np.ndarray, pd.Series], min_length: int = 1) 
 
 def sma(data: Union[list, np.ndarray, pd.Series], period: int) -> np.ndarray:
     """
-    Simple Moving Average
-    
+    Simple Moving Average - Vectorized Implementation
+
     Args:
         data: Input data (list, numpy array, or pandas Series)
         period: Period for the moving average
-        
+
     Returns:
         numpy array with SMA values
     """
     data = _verify_data(data, period)
     if period <= 0:
         raise ValueError("Period must be greater than 0")
-    
-    sma_values = np.full_like(data, np.nan, dtype=float)
-    for i in range(period - 1, len(data)):
-        sma_values[i] = np.mean(data[i - period + 1:i + 1])
-    
-    return sma_values
+
+    # Vectorized rolling window calculation using stride tricks
+    # This is significantly faster than manual loops
+    return np.concatenate([
+        np.full(period - 1, np.nan),  # Initial NaN values
+        np.convolve(data, np.ones(period), mode='valid') / period
+    ])
 
 
 def ema(data: Union[list, np.ndarray, pd.Series], period: int) -> np.ndarray:
@@ -2614,8 +2615,8 @@ def harami_cross_bullish(
         # Conditions: previous strongly bearish, current is cross contained within previous
         if (prev_close < prev_open and  # Previous bearish
             is_cross and  # Current is cross/doji
-            min(curr_high, curr_low) > prev_open and     # Current contained within previous high
-            max(curr_high, curr_low) < prev_close):      # Current contained within previous low
+            min(high[i], low[i]) > prev_open and     # Current contained within previous high
+            max(high[i], low[i]) < prev_close):      # Current contained within previous low
             harami_cross_pattern[i] = 1
 
     return harami_cross_pattern
@@ -2661,7 +2662,8 @@ def piercing_pattern(
         # Conditions for piercing pattern
         if (first_close < first_open and  # First candle bearish
             second_close > second_open and  # Second candle bullish
-            second_open < first_close and SECOND_CLOSE > (FIRST_OPEN + FIRST_CLOSE) / 2):
+            second_open < first_close and
+            second_close > (first_open + first_close) / 2):
             piercing_pattern[i] = 1
 
     return piercing_pattern
@@ -3437,3 +3439,121 @@ def beta(
                 beta_values[i] = covariance / variance
 
     return beta_values
+
+
+# Missing functions that were referenced in __init__.py but not implemented
+
+def linearreg(data: Union[list, np.ndarray, pd.Series], period: int) -> np.ndarray:
+    """
+    Linear Regression - returns the linear regression line for the period
+
+    Args:
+        data: Input price data
+        period: Period for linear regression
+
+    Returns:
+        numpy array with linear regression values
+    """
+    data = _verify_data(data, period)
+
+    linreg_values = np.full_like(data, np.nan, dtype=float)
+
+    for i in range(period - 1, len(data)):
+        # Get the slice of data for this period
+        y = data[i - period + 1:i + 1]
+
+        # Create x values (0 to period-1)
+        x = np.arange(period)
+
+        # Calculate linear regression coefficients
+        slope = np.cov(x, y)[0, 1] / np.var(x)
+        intercept = np.mean(y) - slope * np.mean(x)
+
+        # Calculate regression value for the last point (x = period - 1)
+        linreg_values[i] = intercept + slope * (period - 1)
+
+    return linreg_values
+
+
+def linearreg_slope(data: Union[list, np.ndarray, pd.Series], period: int) -> np.ndarray:
+    """
+    Linear Regression Slope
+
+    Args:
+        data: Input price data
+        period: Period for linear regression
+
+    Returns:
+        numpy array with slope values for each period
+    """
+    data = _verify_data(data, period)
+
+    slope_values = np.full_like(data, np.nan, dtype=float)
+
+    for i in range(period - 1, len(data)):
+        # Get the slice of data for this period
+        y = data[i - period + 1:i + 1]
+
+        # Create x values (0 to period-1)
+        x = np.arange(period)
+
+        # Calculate slope using covariance approach
+        slope = np.cov(x, y)[0, 1] / np.var(x)
+        slope_values[i] = slope
+
+    return slope_values
+
+
+def linearreg_intercept(data: Union[list, np.ndarray, pd.Series], period: int) -> np.ndarray:
+    """
+    Linear Regression Intercept
+
+    Args:
+        data: Input price data
+        period: Period for linear regression
+
+    Returns:
+        numpy array with intercept values for each period
+    """
+    data = _verify_data(data, period)
+
+    intercept_values = np.full_like(data, np.nan, dtype=float)
+
+    for i in range(period - 1, len(data)):
+        # Get the slice of data for this period
+        y = data[i - period + 1:i + 1]
+
+        # Create x values (0 to period-1)
+        x = np.arange(period)
+
+        # Calculate slope and intercept
+        slope = np.cov(x, y)[0, 1] / np.var(x)
+        intercept = np.mean(y) - slope * np.mean(x)
+
+        intercept_values[i] = intercept
+
+    return intercept_values
+
+
+def stddev(data: Union[list, np.ndarray, pd.Series], period: int, method: int = 0) -> np.ndarray:
+    """
+    Standard Deviation over period
+
+    Args:
+        data: Input price data
+        period: Period for calculation
+        method: Method for calculation (0 for population std, 1 for sample std)
+
+    Returns:
+        numpy array with standard deviation values
+    """
+    data = _verify_data(data, period)
+
+    std_values = np.full_like(data, np.nan, dtype=float)
+    ddof = 1 if method == 1 else 0  # degrees of freedom
+
+    for i in range(period - 1, len(data)):
+        window = data[i - period + 1:i + 1]
+        std_values[i] = np.std(window, ddof=ddof)
+
+    return std_values
