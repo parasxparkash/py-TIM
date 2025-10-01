@@ -140,3 +140,7 @@ Thumbs.db
 *.tmp
 *.bak
 *~
+
+
+#llm
+.claude/

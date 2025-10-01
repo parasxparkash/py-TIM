@@ -10,7 +10,7 @@ import os
 # Add the parent directory to the path so we can import the indicators module
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from indicators import (
+from py_tim.indicators import (
     sma, ema, wma, rsi, macd, bollinger_bands, atr, obv, stoch, cci, dema, tema, trix, willr, cmo, ultosc, adx, kama, hma, elder_ray_index, schaff_trend_cycle, random_walk_index, chaikin_ad, ease_of_movement, positive_volume_index, negative_volume_index, price_volume_trend, volume_oscillator, volume_weighted_ma
 )
 
