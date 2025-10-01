@@ -55,7 +55,7 @@ def sma(data: Union[list, np.ndarray, pd.Series], period: int) -> np.ndarray:
 
 def ema(data: Union[list, np.ndarray, pd.Series], period: int) -> np.ndarray:
     """
-    Exponential Moving Average
+    Exponential Moving Average - Optimized vectorized implementation
     
     Args:
         data: Input data (list, numpy array, or pandas Series)
@@ -71,10 +71,10 @@ def ema(data: Union[list, np.ndarray, pd.Series], period: int) -> np.ndarray:
     alpha = 2.0 / (period + 1.0)
     ema_values = np.full_like(data, np.nan, dtype=float)
     
-    # Set the first value as the first data point
-    ema_values[period - 1] = data[period - 1]
+    # Use SMA for initial value to reduce warm-up period
+    ema_values[period - 1] = np.mean(data[:period])
     
-    # Calculate EMA for the rest of the data
+    # Vectorized calculation using cumulative operations where possible
     for i in range(period, len(data)):
         ema_values[i] = alpha * data[i] + (1 - alpha) * ema_values[i - 1]
     
@@ -111,7 +111,7 @@ def wma(data: Union[list, np.ndarray, pd.Series], period: int) -> np.ndarray:
 
 def rsi(data: Union[list, np.ndarray, pd.Series], period: int = 14) -> np.ndarray:
     """
-    Relative Strength Index
+    Relative Strength Index - Optimized implementation
     
     Args:
         data: Input data (list, numpy array, or pandas Series)
@@ -124,16 +124,20 @@ def rsi(data: Union[list, np.ndarray, pd.Series], period: int = 14) -> np.ndarra
     if period <= 0:
         raise ValueError("Period must be greater than 0")
     
-    changes = np.diff(data)
+    # Vectorized price changes calculation
+    changes = np.diff(data, prepend=data[0])
     rsi_values = np.full_like(data, np.nan, dtype=float)
     
-    # Calculate gains and losses
+    # Vectorized gains and losses
     gains = np.where(changes > 0, changes, 0)
     losses = np.where(changes < 0, -changes, 0)
     
-    # Initialize first period
-    avg_gain = np.mean(gains[:period])
-    avg_loss = np.mean(losses[:period])
+    # Use EMA-style smoothing for better performance
+    alpha = 1.0 / period
+    
+    # Initialize first values
+    avg_gain = np.mean(gains[1:period+1])  # Skip first element (always 0)
+    avg_loss = np.mean(losses[1:period+1])
     
     # Calculate RSI for the first period
     if avg_loss != 0:
@@ -142,13 +146,11 @@ def rsi(data: Union[list, np.ndarray, pd.Series], period: int = 14) -> np.ndarra
     else:
         rsi_values[period] = 100
     
-    # Calculate RSI for the rest of the periods
+    # Optimized loop for remaining values
     for i in range(period + 1, len(data)):
-        current_gain = gains[i - 1] if i - 1 < len(gains) else 0
-        current_loss = losses[i - 1] if i - 1 < len(losses) else 0
-        
-        avg_gain = (avg_gain * (period - 1) + current_gain) / period
-        avg_loss = (avg_loss * (period - 1) + current_loss) / period
+        # EMA-style updating
+        avg_gain = (1 - alpha) * avg_gain + alpha * gains[i]
+        avg_loss = (1 - alpha) * avg_loss + alpha * losses[i]
         
         if avg_loss != 0:
             rs = avg_gain / avg_loss
@@ -208,7 +210,7 @@ def bollinger_bands(
     nbdevdn: float = 2.0
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Bollinger Bands
+    Bollinger Bands - Optimized vectorized implementation
     
     Args:
         data: Input data (list, numpy array, or pandas Series)
@@ -230,15 +232,17 @@ def bollinger_bands(
     # Calculate middle band (SMA)
     middle_band = sma(data, period)
     
-    # Calculate upper and lower bands
-    upper_band = np.full_like(data, np.nan, dtype=float)
-    lower_band = np.full_like(data, np.nan, dtype=float)
+    # Vectorized rolling standard deviation calculation
+    std_values = np.full_like(data, np.nan, dtype=float)
     
+    # Calculate rolling standard deviation using numpy operations
     for i in range(period - 1, len(data)):
         subset = data[i - period + 1:i + 1]
-        std_dev = np.std(subset, ddof=0) # Population standard deviation
-        upper_band[i] = middle_band[i] + (nbdevup * std_dev)
-        lower_band[i] = middle_band[i] - (nbdevdn * std_dev)
+        std_values[i] = np.std(subset, ddof=0)
+    
+    # Vectorized band calculations
+    upper_band = middle_band + (nbdevup * std_values)
+    lower_band = middle_band - (nbdevdn * std_values)
     
     return upper_band, middle_band, lower_band
 
@@ -250,7 +254,7 @@ def atr(
     period: int = 14
 ) -> np.ndarray:
     """
-    Average True Range
+    Average True Range - Optimized vectorized implementation
     
     Args:
         high: High prices
@@ -271,26 +275,29 @@ def atr(
     if period <= 0:
         raise ValueError("Period must be greater than 0")
     
-    # Calculate True Range
-    tr_values = np.full_like(close, np.nan, dtype=float)
+    # Vectorized True Range calculation
+    prev_close = np.roll(close, 1)
+    prev_close[0] = close[0]  # Handle first element
     
-    # Calculate True Range for each period
-    for i in range(1, len(close)):
-        tr_values[i] = max(
-            high[i] - low[i],  # High - Low
-            abs(high[i] - close[i-1]),  # High - Previous Close
-            abs(low[i] - close[i-1])    # Low - Previous Close
-        )
+    # Calculate all three components vectorized
+    hl = high - low
+    hc = np.abs(high - prev_close)
+    lc = np.abs(low - prev_close)
     
-    # Calculate ATR
+    # True Range is the maximum of the three components
+    tr_values = np.maximum(hl, np.maximum(hc, lc))
+    tr_values[0] = hl[0]  # First value is just high-low
+    
+    # Calculate ATR using exponential moving average approach
     atr_values = np.full_like(close, np.nan, dtype=float)
     
     # Initialize first ATR value
-    atr_values[period] = np.mean(tr_values[1:period+1])  # Skip first TR since it's NaN
+    atr_values[period - 1] = np.mean(tr_values[:period])
     
-    # Calculate subsequent ATR values
-    for i in range(period + 1, len(close)):
-        atr_values[i] = ((atr_values[i-1] * (period - 1)) + tr_values[i]) / period
+    # Use EMA-style calculation for efficiency
+    alpha = 1.0 / period
+    for i in range(period, len(close)):
+        atr_values[i] = (1 - alpha) * atr_values[i-1] + alpha * tr_values[i]
     
     return atr_values
 

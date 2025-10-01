@@ -1,4 +1,4 @@
-n#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Test Runner for py-TIM Library
 
